@@ -42,6 +42,7 @@ export class RestAPIStack extends cdk.Stack {
       memorySize: 128,
       environment: {
         TABLE_NAME: moviesTable.tableName,
+        CAST_TABLE_NAME: movieCastsTable.tableName, // Added this
         REGION: "eu-west-1",
       },
     });
@@ -65,7 +66,7 @@ export class RestAPIStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: movieCastsTable.tableName, // Now this reference will work
+        TABLE_NAME: movieCastsTable.tableName,
         REGION: "eu-west-1",
       },
     });
@@ -102,13 +103,13 @@ export class RestAPIStack extends cdk.Stack {
         parameters: {
           RequestItems: {
             [moviesTable.tableName]: generateBatch(movies),
-            [movieCastsTable.tableName]: generateBatch(movieCasts), // Now this works
+            [movieCastsTable.tableName]: generateBatch(movieCasts), // Both tables included
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("moviesddbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [moviesTable.tableArn, movieCastsTable.tableArn], // Both tables included
+        resources: [moviesTable.tableArn, movieCastsTable.tableArn],
       }),
     });
 
