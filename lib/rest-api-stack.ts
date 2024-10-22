@@ -55,6 +55,8 @@ export class RestAPIStack extends cdk.Stack {
         }
         );
         
+
+        
         new custom.AwsCustomResource(this, "moviesddbInitData", {
           onCreate: {
             service: "DynamoDB",
@@ -83,11 +85,23 @@ export class RestAPIStack extends cdk.Stack {
           },
         });
 
+        const deleteMovieFn = new lambdanode.NodejsFunction(this, "DeleteMovieFn", {
+          architecture: lambda.Architecture.ARM_64,
+          runtime: lambda.Runtime.NODEJS_16_X,
+          entry: `${__dirname}/../lambdas/deleteMovie.ts`, // Path to deleteMovie.ts
+          timeout: cdk.Duration.seconds(10),
+          memorySize: 128,
+          environment: {
+            TABLE_NAME: moviesTable.tableName,
+            REGION: "eu-west-1",
+          },
+        });
+
         // Permissions 
         moviesTable.grantReadData(getMovieByIdFn)
         moviesTable.grantReadData(getAllMoviesFn)
         moviesTable.grantReadWriteData(newMovieFn)
-        
+        moviesTable.grantReadWriteData(deleteMovieFn);
           // REST API 
     const api = new apig.RestApi(this, "RestAPI", {
       description: "demo api",
@@ -103,24 +117,22 @@ export class RestAPIStack extends cdk.Stack {
     });
 
     const moviesEndpoint = api.root.addResource("movies");
-    moviesEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getAllMoviesFn, { proxy: true })
-    );
 
-    const movieEndpoint = moviesEndpoint.addResource("{movieId}");
-    movieEndpoint.addMethod(
-      "GET",
-      new apig.LambdaIntegration(getMovieByIdFn, { proxy: true })
-    );
+// GET /movies
+moviesEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllMoviesFn, { proxy: true }));
 
+// /movies/{movieId}
+const movieEndpoint = moviesEndpoint.addResource("{movieId}");
 
-     // NEW
-     moviesEndpoint.addMethod(
-      "POST",
-      new apig.LambdaIntegration(newMovieFn, { proxy: true })
-    );
-    
+// GET /movies/{movieId}
+movieEndpoint.addMethod("GET", new apig.LambdaIntegration(getMovieByIdFn, { proxy: true }));
+
+// POST /movies
+moviesEndpoint.addMethod("POST", new apig.LambdaIntegration(newMovieFn, { proxy: true }));
+
+// DELETE /movies/{movieId}
+movieEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteMovieFn, { proxy: true }));
+
       }
     }
     
