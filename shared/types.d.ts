@@ -1,31 +1,25 @@
-// export type Language = 'English' | 'Frenc
-
-export type Movie =   {
-  id: number,
-  backdrop_path: string,
-  genre_ids: number[ ],
-  original_language: string,
-  original_title: string,
-  adult: boolean,
-  overview: string,
-  popularity: number,
-  poster_path: string,
-  release_date: string,
-  title: string,
-  video: boolean,
-  vote_average: number,
-  vote_count: number
-}
-
-export type MovieCast = {
-  movieId: number;
-  actorName: string;
-  roleName: string;
-  roleDescription: string;
+export type Club = {
+  id: number;
+  city: string;
+  name: string;
+  year_founded: number;
 };
-// Used to validate the query string of HTTP Get requests
-export type MovieCastMemberQueryParams = {
-  movieId: string;
-  actorName?: string;
-  roleName?: string
-}
+
+export type ClubPlayer = {
+  clubId: number;
+  playerName: string;
+  value: number;
+  age: number;
+  nationality: string;
+  appearances: number;
+  club: string;
+  league: string;
+  position: string;
+};
+
+// Used to validate the query string of HTTP GET requests
+export type ClubPlayerQueryParams = {
+  clubId: string;
+  playerName?: string;
+  position?: string;
+};

@@ -2,15 +2,10 @@ import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 
-// Initialize the DynamoDB client
-const ddbClient = new DynamoDBClient({ region: process.env.REGION });
-const ddbDocClient = createDDbDocClient();  // Add this line
+const ddbDocClient = createDDbDocClient();
 
-export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
+export const handler: APIGatewayProxyHandlerV2 = async () => {
   try {
-    // Print Event
-    console.log("Event: ", event);
-
     const commandOutput = await ddbDocClient.send(
       new ScanCommand({
         TableName: process.env.TABLE_NAME,
@@ -23,7 +18,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ Message: "Invalid movie Id" }),
+        body: JSON.stringify({ Message: "No clubs found" }),
       };
     }
 
@@ -31,7 +26,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       data: commandOutput.Items,
     };
 
-    // Return Response
     return {
       statusCode: 200,
       headers: {
@@ -40,7 +34,6 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
       body: JSON.stringify(body),
     };
   } catch (error: any) {
-    console.log(JSON.stringify(error));
     return {
       statusCode: 500,
       headers: {
@@ -51,17 +44,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   }
 };
 
-// Function to create the DynamoDB Document client
 function createDDbDocClient() {
   const ddbClient = new DynamoDBClient({ region: process.env.REGION });
-  const marshallOptions = {
-    convertEmptyValues: true,
-    removeUndefinedValues: true,
-    convertClassInstanceToMap: true,
-  };
-  const unmarshallOptions = {
-    wrapNumbers: false,
-  };
-  const translateConfig = { marshallOptions, unmarshallOptions };
-  return DynamoDBDocumentClient.from(ddbClient, translateConfig);
+  return DynamoDBDocumentClient.from(ddbClient);
 }

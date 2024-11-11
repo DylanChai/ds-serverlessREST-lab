@@ -29,7 +29,10 @@
     "cdk.out"
   ],
   "include": [
-    "shared/*.json"
+    "seed/**/*",
+    "bin/**/*.ts",
+    "lib/**/*.ts",
+    "shared/**/*.ts",
+    "shared/*.json" // Optional if you need JSON files in the shared folder
   ]
-  
 }

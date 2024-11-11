@@ -5,124 +5,124 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
-import { movies, movieCasts } from "../seed/movies";
+import { clubs, clubPlayers } from "../seed/clubs"; // Updated import for seed data
 import * as apig from "aws-cdk-lib/aws-apigateway";
 
-export class RestAPIStack extends cdk.Stack {
+export class ClubAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Define tables first
-    const moviesTable = new dynamodb.Table(this, "MoviesTable", {
+    // Define tables for clubs and players
+    const clubsTable = new dynamodb.Table(this, "ClubsTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "Movies",
+      tableName: "Clubs",
     });
 
-    const movieCastsTable = new dynamodb.Table(this, "MovieCastTable", {
+    const clubPlayersTable = new dynamodb.Table(this, "ClubPlayersTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      partitionKey: { name: "movieId", type: dynamodb.AttributeType.NUMBER },
-      sortKey: { name: "actorName", type: dynamodb.AttributeType.STRING },
+      partitionKey: { name: "clubId", type: dynamodb.AttributeType.NUMBER },
+      sortKey: { name: "playerName", type: dynamodb.AttributeType.STRING },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      tableName: "MovieCast",
+      tableName: "ClubPlayers",
     });
 
-    movieCastsTable.addLocalSecondaryIndex({
-      indexName: "roleIx",
-      sortKey: { name: "roleName", type: dynamodb.AttributeType.STRING },
+    clubPlayersTable.addLocalSecondaryIndex({
+      indexName: "positionIx",
+      sortKey: { name: "position", type: dynamodb.AttributeType.STRING },
     });
 
-    // Define Lambda functions
-    const getMovieByIdFn = new lambdanode.NodejsFunction(this, "GetMovieByIdFn", {
+    // Define Lambda functions for Clubs and ClubPlayers
+    const getClubByIdFn = new lambdanode.NodejsFunction(this, "GetClubByIdFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
-      entry: `${__dirname}/../lambdas/getMovieById.ts`,
+      entry: `${__dirname}/../lambdas/getClubById.ts`,
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: moviesTable.tableName,
-        CAST_TABLE_NAME: movieCastsTable.tableName, // Added this
+        TABLE_NAME: clubsTable.tableName,
+        PLAYER_TABLE_NAME: clubPlayersTable.tableName, // Reference the players table
         REGION: "eu-west-1",
       },
     });
 
-    const getAllMoviesFn = new lambdanode.NodejsFunction(this, "GetAllMoviesFn", {
+    const getAllClubsFn = new lambdanode.NodejsFunction(this, "GetAllClubsFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
-      entry: `${__dirname}/../lambdas/getAllMovies.ts`,
+      entry: `${__dirname}/../lambdas/getAllClubs.ts`,
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: moviesTable.tableName,
+        TABLE_NAME: clubsTable.tableName,
         REGION: "eu-west-1",
       },
     });
 
-    const getMovieCastMembersFn = new lambdanode.NodejsFunction(this, "GetCastMemberFn", {
+    const getClubPlayersFn = new lambdanode.NodejsFunction(this, "GetClubPlayersFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_16_X,
-      entry: `${__dirname}/../lambdas/getMovieCastMember.ts`,
+      entry: `${__dirname}/../lambdas/getClubPlayer.ts`,
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: movieCastsTable.tableName,
+        TABLE_NAME: clubPlayersTable.tableName,
         REGION: "eu-west-1",
       },
     });
 
-    const newMovieFn = new lambdanode.NodejsFunction(this, "AddMovieFn", {
+    const addClubFn = new lambdanode.NodejsFunction(this, "AddClubFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_16_X,
-      entry: `${__dirname}/../lambdas/addMovie.ts`,
+      entry: `${__dirname}/../lambdas/addClub.ts`,
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: moviesTable.tableName,
+        TABLE_NAME: clubsTable.tableName,
         REGION: "eu-west-1",
       },
     });
 
-    const deleteMovieFn = new lambdanode.NodejsFunction(this, "DeleteMovieFn", {
+    const deleteClubFn = new lambdanode.NodejsFunction(this, "DeleteClubFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_16_X,
-      entry: `${__dirname}/../lambdas/deleteMovie.ts`,
+      entry: `${__dirname}/../lambdas/deleteClub.ts`,
       timeout: cdk.Duration.seconds(10),
       memorySize: 128,
       environment: {
-        TABLE_NAME: moviesTable.tableName,
+        TABLE_NAME: clubsTable.tableName,
         REGION: "eu-west-1",
       },
     });
 
     // Populate the DynamoDB tables
-    new custom.AwsCustomResource(this, "moviesddbInitData", {
+    new custom.AwsCustomResource(this, "clubsddbInitData", {
       onCreate: {
         service: "DynamoDB",
         action: "batchWriteItem",
         parameters: {
           RequestItems: {
-            [moviesTable.tableName]: generateBatch(movies),
-            [movieCastsTable.tableName]: generateBatch(movieCasts), // Both tables included
+            [clubsTable.tableName]: generateBatch(clubs),
+            [clubPlayersTable.tableName]: generateBatch(clubPlayers), // Include player data
           },
         },
-        physicalResourceId: custom.PhysicalResourceId.of("moviesddbInitData"),
+        physicalResourceId: custom.PhysicalResourceId.of("clubsddbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [moviesTable.tableArn, movieCastsTable.tableArn],
+        resources: [clubsTable.tableArn, clubPlayersTable.tableArn],
       }),
     });
 
     // Permissions
-    moviesTable.grantReadData(getMovieByIdFn);
-    moviesTable.grantReadData(getAllMoviesFn);
-    moviesTable.grantReadWriteData(newMovieFn);
-    moviesTable.grantReadWriteData(deleteMovieFn);
-    movieCastsTable.grantReadData(getMovieCastMembersFn);
+    clubsTable.grantReadData(getClubByIdFn);
+    clubsTable.grantReadData(getAllClubsFn);
+    clubsTable.grantReadWriteData(addClubFn);
+    clubsTable.grantReadWriteData(deleteClubFn);
+    clubPlayersTable.grantReadData(getClubPlayersFn);
 
     // API Gateway setup
     const api = new apig.RestApi(this, "RestAPI", {
-      description: "demo api",
+      description: "Club and Player API",
       deployOptions: {
         stageName: "dev",
       },
@@ -134,21 +134,25 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
-    const moviesEndpoint = api.root.addResource("movies");
+    const clubsEndpoint = api.root.addResource("clubs");
 
-    // GET /movies
-    moviesEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllMoviesFn, { proxy: true }));
+    // GET /clubs
+    clubsEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllClubsFn, { proxy: true }));
 
-    // /movies/{movieId}
-    const movieEndpoint = moviesEndpoint.addResource("{movieId}");
+    // /clubs/{clubId}
+    const clubEndpoint = clubsEndpoint.addResource("{clubId}");
 
-    // GET /movies/{movieId}
-    movieEndpoint.addMethod("GET", new apig.LambdaIntegration(getMovieByIdFn, { proxy: true }));
+    // GET /clubs/{clubId}
+    clubEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubByIdFn, { proxy: true }));
 
-    // POST /movies
-    moviesEndpoint.addMethod("POST", new apig.LambdaIntegration(newMovieFn, { proxy: true }));
+    // POST /clubs
+    clubsEndpoint.addMethod("POST", new apig.LambdaIntegration(addClubFn, { proxy: true }));
 
-    // DELETE /movies/{movieId}
-    movieEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteMovieFn, { proxy: true }));
+    // DELETE /clubs/{clubId}
+    clubEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteClubFn, { proxy: true }));
+
+    // GET /clubs/{clubId}/players
+    const clubPlayersEndpoint = clubEndpoint.addResource("players");
+    clubPlayersEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubPlayersFn, { proxy: true }));
   }
 }

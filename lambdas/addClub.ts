@@ -5,7 +5,7 @@ import Ajv from "ajv";
 import schema from "../shared/types.schema.json";
 
 const ajv = new Ajv();
-const validate = ajv.compile(schema.definitions["Movie"] || {});
+const validate = ajv.compile(schema.definitions["Club"] || {});
 const ddbDocClient = createDDbDocClient();
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
@@ -25,8 +25,8 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
         statusCode: 400,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          message: "Request body does not match Movie schema",
-          schema: schema.definitions["Movie"],
+          message: "Request body does not match Club schema",
+          schema: schema.definitions["Club"],
         }),
       };
     }
@@ -41,7 +41,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return {
       statusCode: 201,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "Movie added successfully" }),
+      body: JSON.stringify({ message: "Club added successfully" }),
     };
   } catch (error) {
     return {

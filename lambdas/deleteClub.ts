@@ -7,19 +7,19 @@ const ddbDocClient = createDDbDocClient();
 
 export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   try {
-    const movieId = event.pathParameters?.movieId;
+    const clubId = event.pathParameters?.clubId;
 
-    if (!movieId) {
+    if (!clubId) {
       return {
         statusCode: 400,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "movieId is required in the path" }),
+        body: JSON.stringify({ message: "clubId is required in the path" }),
       };
     }
 
     const deleteCommand = new DeleteCommand({
       TableName: process.env.TABLE_NAME,
-      Key: { id: Number(movieId) },  // Make sure to convert movieId to a number
+      Key: { id: Number(clubId) },
     });
 
     await ddbDocClient.send(deleteCommand);
@@ -27,18 +27,17 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
     return {
       statusCode: 200,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: `Movie with ID ${movieId} deleted successfully` }),
+      body: JSON.stringify({ message: `Club with ID ${clubId} deleted successfully` }),
     };
   } catch (error) {
     return {
       statusCode: 500,
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message: "Failed to delete movie", error: error.message }),
+      body: JSON.stringify({ message: "Failed to delete club", error: error.message }),
     };
   }
 };
 
-// Helper function to create DynamoDB DocumentClient
 function createDDbDocClient() {
   const ddbClient = new DynamoDBClient({ region: process.env.REGION });
   return DynamoDBDocumentClient.from(ddbClient);
