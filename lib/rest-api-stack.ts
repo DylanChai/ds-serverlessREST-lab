@@ -7,12 +7,31 @@ import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { clubs, clubPlayers } from "../seed/clubs"; // Updated import for seed data
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import { UserPool } from "aws-cdk-lib/aws-cognito";
+import { AuthApi } from './auth-api'
 
 export class ClubAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // Define tables for clubs and players
+    // Cognito User Pool setup
+    const userPool = new UserPool(this, "UserPool", {
+      signInAliases: { username: true, email: true },
+      selfSignUpEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const appClient = userPool.addClient("AppClient", {
+      authFlows: { userPassword: true },
+    });
+    const userPoolId = userPool.userPoolId;
+    const userPoolClientId = appClient.userPoolClientId;
+
+    new AuthApi(this, 'AuthServiceApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
+    });
+
+    // DynamoDB tables for clubs and players
     const clubsTable = new dynamodb.Table(this, "ClubsTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
@@ -33,7 +52,7 @@ export class ClubAPIStack extends cdk.Stack {
       sortKey: { name: "position", type: dynamodb.AttributeType.STRING },
     });
 
-    // Define Lambda functions for Clubs and ClubPlayers
+    // Lambda functions for Clubs and ClubPlayers
     const getClubByIdFn = new lambdanode.NodejsFunction(this, "GetClubByIdFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -42,7 +61,7 @@ export class ClubAPIStack extends cdk.Stack {
       memorySize: 128,
       environment: {
         TABLE_NAME: clubsTable.tableName,
-        PLAYER_TABLE_NAME: clubPlayersTable.tableName, // Reference the players table
+        PLAYER_TABLE_NAME: clubPlayersTable.tableName,
         REGION: "eu-west-1",
       },
     });
@@ -95,7 +114,7 @@ export class ClubAPIStack extends cdk.Stack {
       },
     });
 
-    // Populate the DynamoDB tables
+    // Populate DynamoDB tables
     new custom.AwsCustomResource(this, "clubsddbInitData", {
       onCreate: {
         service: "DynamoDB",
@@ -103,7 +122,7 @@ export class ClubAPIStack extends cdk.Stack {
         parameters: {
           RequestItems: {
             [clubsTable.tableName]: generateBatch(clubs),
-            [clubPlayersTable.tableName]: generateBatch(clubPlayers), // Include player data
+            [clubPlayersTable.tableName]: generateBatch(clubPlayers),
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("clubsddbInitData"),
@@ -134,25 +153,46 @@ export class ClubAPIStack extends cdk.Stack {
       },
     });
 
+    // Define the Cognito Authorizer
+    const authorizer = new apig.CognitoUserPoolsAuthorizer(this, "CognitoAuthorizer", {
+      cognitoUserPools: [userPool],
+    });
+
+    // Define resources and attach the authorizer to methods
     const clubsEndpoint = api.root.addResource("clubs");
 
-    // GET /clubs
-    clubsEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllClubsFn, { proxy: true }));
+    // GET /clubs with authorization
+    clubsEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllClubsFn), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
 
-    // /clubs/{clubId}
+    // POST /clubs with authorization
+    clubsEndpoint.addMethod("POST", new apig.LambdaIntegration(addClubFn), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
+
+    // /clubs/{clubId} resource
     const clubEndpoint = clubsEndpoint.addResource("{clubId}");
 
-    // GET /clubs/{clubId}
-    clubEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubByIdFn, { proxy: true }));
+    // GET /clubs/{clubId} with authorization
+    clubEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubByIdFn), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
 
-    // POST /clubs
-    clubsEndpoint.addMethod("POST", new apig.LambdaIntegration(addClubFn, { proxy: true }));
+    // DELETE /clubs/{clubId} with authorization
+    clubEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteClubFn), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
 
-    // DELETE /clubs/{clubId}
-    clubEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteClubFn, { proxy: true }));
-
-    // GET /clubs/{clubId}/players
+    // GET /clubs/{clubId}/players with authorization
     const clubPlayersEndpoint = clubEndpoint.addResource("players");
-    clubPlayersEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubPlayersFn, { proxy: true }));
+    clubPlayersEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubPlayersFn), {
+      authorizer,
+      authorizationType: apig.AuthorizationType.COGNITO,
+    });
   }
 }
