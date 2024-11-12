@@ -7,10 +7,29 @@ import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { clubs, clubPlayers } from "../seed/clubs"; // Updated import for seed data
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import { UserPool } from "aws-cdk-lib/aws-cognito";
+import { AuthApi } from './auth-api'
 
 export class ClubAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    
+    const userPool = new UserPool(this, "UserPool", {
+      signInAliases: { username: true, email: true },
+      selfSignUpEnabled: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    const appClient = userPool.addClient("AppClient", {
+      authFlows: { userPassword: true },
+    });
+    const userPoolId = userPool.userPoolId;
+    const userPoolClientId = appClient.userPoolClientId;
+
+    new AuthApi(this, 'AuthServiceApi', {
+      userPoolId: userPoolId,
+      userPoolClientId: userPoolClientId,
+    });
 
     // Define tables for clubs and players
     const clubsTable = new dynamodb.Table(this, "ClubsTable", {
@@ -154,5 +173,18 @@ export class ClubAPIStack extends cdk.Stack {
     // GET /clubs/{clubId}/players
     const clubPlayersEndpoint = clubEndpoint.addResource("players");
     clubPlayersEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubPlayersFn, { proxy: true }));
+
+    const authorizer = new apig.CognitoUserPoolsAuthorizer(this, "CognitoAuthorizer", {
+      cognitoUserPools: [userPool],
+    });
+
+    new apig.LambdaIntegration(getAllClubsFn, { proxy: true }),
+    { authorizer, authorizationType: apig.AuthorizationType.COGNITO };
+
+    new apig.LambdaIntegration(deleteClubFn, { proxy: true }),
+          { authorizer, authorizationType: apig.AuthorizationType.COGNITO }
+
   }
+
+  
 }
