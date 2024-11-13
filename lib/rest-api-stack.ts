@@ -4,8 +4,6 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import { generateBatch } from "../shared/util";
-import { clubs, clubPlayers } from "../seed/clubs";
 import * as apig from "aws-cdk-lib/aws-apigateway";
 import { UserPool } from "aws-cdk-lib/aws-cognito";
 import { AuthApi } from './auth-api';
@@ -53,7 +51,7 @@ export class ClubAPIStack extends cdk.Stack {
       sortKey: { name: "position", type: dynamodb.AttributeType.STRING },
     });
 
-    // Lambda functions for Clubs and ClubPlayers
+    // Lambda functions
     const getClubByIdFn = new lambdanode.NodejsFunction(this, "GetClubByIdFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -79,6 +77,30 @@ export class ClubAPIStack extends cdk.Stack {
       },
     });
 
+    const addClubFn = new lambdanode.NodejsFunction(this, "AddClubFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/addClub.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: clubsTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
+    const deleteClubFn = new lambdanode.NodejsFunction(this, "DeleteClubFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/deleteClub.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: clubsTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
     const translateClubFn = new lambdanode.NodejsFunction(this, "TranslateClubFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -91,13 +113,25 @@ export class ClubAPIStack extends cdk.Stack {
       },
     });
 
+    const getClubPlayerFn = new lambdanode.NodejsFunction(this, "GetClubPlayerFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/getClubPlayer.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: clubPlayersTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
     // Grant permissions to use Amazon Translate
     translateClubFn.addToRolePolicy(new iam.PolicyStatement({
       actions: ["translate:TranslateText"],
       resources: ["*"],
     }));
 
-    // API Gateway setup
+    // Initialize API Gateway
     const api = new apig.RestApi(this, "RestAPI", {
       description: "Club and Player API",
       deployOptions: {
@@ -105,33 +139,108 @@ export class ClubAPIStack extends cdk.Stack {
       },
       defaultCorsPreflightOptions: {
         allowHeaders: ["Content-Type", "X-Amz-Date"],
-        allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
+        allowMethods: ["OPTIONS", "GET", "POST", "PUT", "DELETE"],
         allowCredentials: true,
         allowOrigins: ["*"],
       },
     });
 
-    const authorizer = new apig.CognitoUserPoolsAuthorizer(this, "CognitoAuthorizer", {
-      cognitoUserPools: [userPool],
+    const requestAuthorizer = new apig.RequestAuthorizer(this, "RequestAuthorizer", {
+      handler: new lambdanode.NodejsFunction(this, "AuthorizerFn", {
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/auth/authorizer.ts`,
+        environment: {
+          USER_POOL_ID: userPoolId,
+          CLIENT_ID: userPoolClientId,
+          REGION: "eu-west-1",
+        },
+      }),
+      identitySources: [apig.IdentitySource.header("cookie")],
+      resultsCacheTtl: cdk.Duration.minutes(0),
     });
 
+    const updateClubFn = new lambdanode.NodejsFunction(this, "UpdateClubFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateClub.ts`, // Ensure you create this file
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: clubsTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
+    // Setup API resources
     const clubsEndpoint = api.root.addResource("clubs");
+
+    // GET /clubs - Retrieve all clubs
     clubsEndpoint.addMethod("GET", new apig.LambdaIntegration(getAllClubsFn), {
-      authorizer,
-      authorizationType: apig.AuthorizationType.COGNITO,
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
     });
 
+    // POST /clubs - Add a new club
+    clubsEndpoint.addMethod("POST", new apig.LambdaIntegration(addClubFn), {
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
+    });
+
+    // /clubs/{clubId} - Get, Delete specific club
     const clubEndpoint = clubsEndpoint.addResource("{clubId}");
 
-    const translateClubEndpoint = clubEndpoint.addResource("translate");
-    translateClubEndpoint.addMethod("GET", new apig.LambdaIntegration(translateClubFn), {
-      authorizer,
-      authorizationType: apig.AuthorizationType.COGNITO,
+    // GET /clubs/{clubId} - Retrieve club by ID
+    clubEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubByIdFn), {
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
     });
 
-    // Additional permissions and configuration as needed
+    // DELETE /clubs/{clubId} - Delete a club by ID
+    clubEndpoint.addMethod("DELETE", new apig.LambdaIntegration(deleteClubFn), {
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
+    });
+
+    // /clubs/{clubId}/translate - Translate club name
+    const translateClubEndpoint = clubEndpoint.addResource("translate");
+    translateClubEndpoint.addMethod("GET", new apig.LambdaIntegration(translateClubFn), {
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
+    });
+
+    // /clubs/{clubId}/players - Retrieve players for a specific club
+    const clubPlayerEndpoint = clubEndpoint.addResource("players");
+    clubPlayerEndpoint.addMethod("GET", new apig.LambdaIntegration(getClubPlayerFn), {
+      authorizer: requestAuthorizer,
+      authorizationType: apig.AuthorizationType.CUSTOM,
+    });
+
+    translateClubFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ["dynamodb:UpdateItem"],
+      resources: [clubsTable.tableArn],
+    }));
+    
+    // Add a PUT method for updating a specific club by ID
+clubEndpoint.addMethod("PUT", new apig.LambdaIntegration(updateClubFn), {
+  authorizer: requestAuthorizer,
+  authorizationType: apig.AuthorizationType.CUSTOM,
+});
+
+
+    // Permissions
+    clubsTable.grantReadWriteData(addClubFn);
+    clubsTable.grantReadWriteData(deleteClubFn);
     clubsTable.grantReadData(getClubByIdFn);
     clubsTable.grantReadData(getAllClubsFn);
     clubsTable.grantReadData(translateClubFn);
+    clubPlayersTable.grantReadData(getClubPlayerFn);
+    // Grant permissions for TranslateClubFn to update items in the Clubs table
+clubsTable.grantWriteData(translateClubFn);
+// Permissions for the TranslateClubFn function
+clubsTable.grantReadData(translateClubFn);
+clubsTable.grantWriteData(translateClubFn); //Updating permissions
+clubsTable.grantReadWriteData(translateClubFn);
+clubsTable.grantReadWriteData(updateClubFn);
+
   }
 }
